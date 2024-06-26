@@ -1,0 +1,1024 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<html>
+<head>
+<title>LZZIFG_INTERFACES_VENDORF01</title>
+</head>
+<body bgcolor="#FFFFE0">
+<font size="3" face = "Arial" color="#000000"><b>Description: LZZIFG_INTERFACES_VENDORF01</b></font>
+<br>
+<font size="3" face = "Arial" color="#000000"><b> Include LZZIFG_INTERFACES_VEN_CUSF01</b></font>
+<hr>
+<pre width="150">
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">***INCLUDE LZZIFG_INTERFACES_VEN_CUSF01 .</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  SELECT_PARAMETERS</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Seleciona parâmetros para Inteface do Fornecedor</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM  select_parameters .
+
+<font color ="#0000FF">* Verifica se o campo tipo de Fornecedor esta preenchido</font>
+  IF wa_vendor_data-vendor_type IS INITIAL.
+    MESSAGE ID  'ZZIFM'
+        TYPE    'E'
+        NUMBER  '026'
+        WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+        RAISING others.
+  ENDIF.
+
+
+<font color ="#0000FF">* Busca parametros campos especificos</font>
+  CLEAR: wa_ifc_vdr001.
+  SELECT SINGLE *
+       FROM zzift_ifc_vdr001
+       INTO wa_ifc_vdr001
+       WHERE tp_vendor_master = wa_vendor_data-vendor_type
+         AND bukrs            = wa_vendor_data-bukrs.
+
+<font color ="#0000FF">* Busca parâmetros DE/PARA de Forma de Pagto</font>
+  CLEAR: wa_ifc_vdr002.
+  SELECT SINGLE *
+       FROM zzift_ifc_vdr002
+       INTO wa_ifc_vdr002
+       WHERE legacy_id     = v_legacy_id
+         AND pay_type_code = wa_vendor_data-pay_type_code.
+
+  IF wa_vendor_data-flag_week EQ 'Y'.
+<font color ="#0000FF">*   Busca Parâmetros DE/PARA de Condição de Pagto</font>
+    CLEAR: wa_ifc_vdr003.
+    SELECT SINGLE *
+          FROM zzift_ifc_vdr003
+          INTO wa_ifc_vdr003
+          WHERE legacy_id    = v_legacy_id.
+<font color ="#0000FF">*            AND zterm_legacy = wa_vendor_data-flag_week.</font>
+  ENDIF.
+
+ENDFORM.                    " GET_PARAMETERS
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  SELECT_DATA</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Seleciona dados</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM select_data .
+
+  REFRESH: it_lfa1 ,
+           it_lfb1 ,
+           it_knb1 .
+
+  CLEAR: v_achou_fornecedor,
+         v_achou_cliente   ,
+         v_cria_cliente    .
+
+<font color ="#0000FF">* Seleciona parâmetros</font>
+  PERFORM select_parameters.
+
+<font color ="#0000FF">* Verifica se o CNPJ ou CPF está informado</font>
+  IF  wa_vendor_data-stcd1 IS INITIAL
+  AND wa_vendor_data-stcd2 IS INITIAL.
+    MESSAGE e518 RAISING cnpj_cpf_is_empty.
+  ENDIF.
+
+<font color ="#0000FF">* Caso não tenha parametrizado o tipo de Fornecedor para a empresa emite mensagem</font>
+  IF wa_ifc_vdr001 IS INITIAL.
+    MESSAGE ID  'ZZIFM'
+        TYPE    'E'
+        NUMBER  '025'
+        WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+        RAISING others.
+  ENDIF.
+
+<font color ="#0000FF">* Seleciona Mestre de bancos</font>
+  CLEAR: wa_bnka.
+  SELECT SINGLE banks bankl
+    FROM bnka
+    INTO wa_bnka
+    WHERE banks EQ wa_vendor_data-banks
+      AND bankl EQ wa_vendor_data-bankl.
+
+<font color ="#0000FF">**********************************</font>
+<font color ="#0000FF">******PESQUISA FORNECEDOR*********</font>
+<font color ="#0000FF">**********************************</font>
+<font color ="#0000FF">* Identifica o Fornecedor utilizando o Código da Empresa, Número Antigo e CNPJ/CPF</font>
+  SELECT SINGLE lifnr bukrs
+  FROM zzifv_lfb1
+  INTO wa_lfb1
+    WHERE bukrs EQ wa_vendor_data-bukrs
+    AND   altkn EQ wa_vendor_data-altkn
+    AND   stcd1 EQ wa_vendor_data-stcd1
+    AND   stcd2 EQ wa_vendor_data-stcd2.
+
+  IF sy-subrc EQ 0.
+    v_achou_fornecedor = 'X'.
+  ELSE.
+<font color ="#0000FF">*   Verifica se o tipo de operação é inclusão</font>
+    IF wa_vendor_data-operation NE zzifc_operation_itf_incluir.
+      MESSAGE ID  'ZZIFM'
+          TYPE    'E'
+          NUMBER  '015'
+          WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+          RAISING vendor_not_found.
+<font color ="#0000FF">*      MESSAGE e015 RAISING vendor_not_found.</font>
+    ENDIF.
+  ENDIF.
+
+<font color ="#0000FF">**********************************</font>
+<font color ="#0000FF">******PESQUISA CLIENTE************</font>
+<font color ="#0000FF">**********************************</font>
+<font color ="#0000FF">* Alguns Fornecedores devem ser cadastrados como Clientes também</font>
+<font color ="#0000FF">* isso acontecerá de acordo com o parâmetro da tabela zzift_ifc_vrd001</font>
+
+<font color ="#0000FF">* Verifica se parâmetro cria cliente está preenchido</font>
+  IF wa_ifc_vdr001-create_customer IS NOT INITIAL.
+
+<font color ="#0000FF">*   Identifica o Cliente utilizando o Código da Empresa, Número Antigo e CNPJ/CPF</font>
+    SELECT SINGLE kunnr bukrs
+    FROM zzifv_knb1
+    INTO wa_knb1
+      WHERE bukrs EQ wa_vendor_data-bukrs
+      AND   altkn EQ wa_vendor_data-altkn
+      AND   stcd1 EQ wa_vendor_data-stcd1
+      AND   stcd2 EQ wa_vendor_data-stcd2.
+
+<font color ="#0000FF">*   Caso encontre o CLiente cadastrado e operação é incluir,</font>
+<font color ="#0000FF">*   interromper processamento e retornar mensagem de erro</font>
+    IF sy-subrc EQ 0.
+      v_achou_cliente = 'X'.
+    ELSE.
+      IF wa_vendor_data-operation NE zzifc_operation_itf_incluir.
+
+        MESSAGE ID  'ZZIFM'
+            TYPE    'E'
+            NUMBER  '024'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+            RAISING customer_error.
+<font color ="#0000FF">*        MESSAGE e024 RAISING customer_error.</font>
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+<font color ="#0000FF">* Tratamento para</font>
+  CHECK v_achou_fornecedor IS NOT INITIAL.         "Se existe Fornecedor
+
+  IF wa_ifc_vdr001-create_customer IS NOT INITIAL. "Criar Cliente
+    IF v_achou_cliente IS NOT INITIAL.             "Se exite Cliente
+      IF wa_vendor_data-operation EQ zzifc_operation_itf_incluir.
+        MESSAGE ID  'ZZIFM'
+            TYPE    'E'
+            NUMBER  '030'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+            RAISING customer_already_exist.
+<font color ="#0000FF">*        MESSAGE e030 RAISING customer_already_exist.</font>
+      ELSE.
+<font color ="#0000FF">*       Faz a checagem do código do Cliente</font>
+        IF wa_vendor_data-lifnr NE wa_knb1-kunnr.
+          MESSAGE ID  'ZZIFM'
+              TYPE    'E'
+              NUMBER  '031'
+              WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+              RAISING customer_code_not_found.
+<font color ="#0000FF">*          MESSAGE e031 RAISING customer_code_not_found.</font>
+        ENDIF.
+      ENDIF.
+    ELSE.
+<font color ="#0000FF">*     Marca Variavel para criação do cliente em um reprocessamento</font>
+      v_cria_cliente = 'X'.
+    ENDIF.
+  ELSE.
+<font color ="#0000FF">*   Caso encontre o fornecedor cadastrado e operação é incluir,</font>
+<font color ="#0000FF">*   interromper processamento e retornar mensagem de erro</font>
+    IF wa_vendor_data-operation EQ zzifc_operation_itf_incluir.
+      MESSAGE ID  'ZZIFM'
+          TYPE    'E'
+          NUMBER  '009'
+          WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+          RAISING vendor_already_exist.
+<font color ="#0000FF">*      MESSAGE e009 RAISING vendor_already_exist.</font>
+    ELSE.
+<font color ="#0000FF">*       Faz a checagem do código do Fornecedor</font>
+      IF wa_vendor_data-lifnr NE wa_lfb1-lifnr.
+        MESSAGE ID  'ZZIFM'
+            TYPE    'E'
+            NUMBER  '017'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+            RAISING vendor_code_not_found.
+<font color ="#0000FF">*        MESSAGE e017 RAISING vendor_code_not_found.</font>
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                    " SELECT_DATA
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  PAYMENT_METHOD</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Tratamento DE/PARA de Forma de Pagamento e Cond. Pgto</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM vendor_payment_method .
+
+  MOVE: wa_ifc_vdr002-zwels TO wa_vendor_data-zwels.
+<font color ="#0000FF">*        wa_ifc_vdr002-zahls TO wa_vendor_data-zahls.</font>
+
+  MOVE: wa_ifc_vdr003-zterm TO wa_vendor_data-zterm.
+
+ENDFORM.                    " PAYMENT_METHOD
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">** Form  VENDOR_CARREGA_BDC</font>
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">** Batch Input transações Fornecedor</font>
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">*FORM vendor_carrega_bdc.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  IF wa_vendor_data-operation EQ zzifc_operation_itf_incluir.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*    v_trans = 'FK01'.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">**   Tela de Entrada da Criação do Fornecedor (FK01)</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      'X' 'SAPMF02K'            '0105',</font>
+<font color ="#0000FF">*      ' ' 'BDC_OKCODE'          '/00' ,</font>
+<font color ="#0000FF">*      ' ' 'RF02K-LIFNR'         wa_vendor_data-lifnr   , "Cod. Fornecedor</font>
+<font color ="#0000FF">*      ' ' 'RF02K-BUKRS'         wa_vendor_data-bukrs   , "Empresa</font>
+<font color ="#0000FF">*      ' ' 'RF02K-KTOKK'         wa_ifc_vdr001-ktokk    . "Grupo de contas do Fornecedor</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  ELSEIF wa_vendor_data-operation EQ zzifc_operation_itf_alterar.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*    v_trans = 'FK02'.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">**   Tela de Entrada de Alteração do Fornecedor (FK02)</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      'X' 'SAPMF02K'            '0106'  ,</font>
+<font color ="#0000FF">*      ' ' 'BDC_OKCODE'          '=MALL' ,</font>
+<font color ="#0000FF">*      ' ' 'RF02K-LIFNR'         wa_vendor_data-lifnr   , "Cod. Fornecedor</font>
+<font color ="#0000FF">*      ' ' 'RF02K-BUKRS'         wa_vendor_data-bukrs   , "Empresa</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*      'X' 'SAPMF02K'            '0106',</font>
+<font color ="#0000FF">*      ' ' 'BDC_OKCODE'          '/00' .</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">** Verifica se Fornecedor já existe cadastrado</font>
+<font color ="#0000FF">*  IF NOT wa_vendor_data-stcd1 IS INITIAL.</font>
+<font color ="#0000FF">*    v_title = 'Empresa'.</font>
+<font color ="#0000FF">*  ELSEIF NOT wa_vendor_data-stcd2 IS INITIAL.</font>
+<font color ="#0000FF">*    v_title = 'Sr.'.</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*  CONDENSE v_title.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*    'X' 'SAPMF02K'              '0110',</font>
+<font color ="#0000FF">*    ' ' 'BDC_OKCODE'            '=VW' ,</font>
+<font color ="#0000FF">*    ' ' 'LFA1-ANRED'            v_title                  , "Forma de Tratamento</font>
+<font color ="#0000FF">*    ' ' 'LFA1-NAME1'            wa_vendor_data-name1     , "Nome Linha 1</font>
+<font color ="#0000FF">*    ' ' 'LFA1-NAME2'            wa_vendor_data-name2     , "Nome Linha 2</font>
+<font color ="#0000FF">*    ' ' 'LFA1-NAME4'            wa_vendor_data-name4     , "Nome Linha 4</font>
+<font color ="#0000FF">*    ' ' 'LFA1-SORTL'            wa_vendor_data-sort1     , "Termo de Pesquisa1</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STRAS'            wa_vendor_data-street    , "Endereço</font>
+<font color ="#0000FF">**   ' ' 'LFA1-PFACH'                                       "Caixa Postal</font>
+<font color ="#0000FF">*    ' ' 'LFA1-ORT01'            wa_vendor_data-city1     , "Local</font>
+<font color ="#0000FF">*    ' ' 'LFA1-PSTLZ'            wa_vendor_data-post_code , "Codigo Postal</font>
+<font color ="#0000FF">*    ' ' 'LFA1-ORT02'            wa_vendor_data-city2     , "Bairro</font>
+<font color ="#0000FF">*    ' ' 'LFA1-LAND1'            wa_vendor_data-country   , "Pais</font>
+<font color ="#0000FF">*    ' ' 'LFA1-REGIO'            wa_vendor_data-region    , "Região</font>
+<font color ="#0000FF">*    ' ' 'LFA1-SPRAS'            'PT'                     , "Idioma</font>
+<font color ="#0000FF">*    ' ' 'LFA1-TELF1'            wa_vendor_data-tel_number,  "Telefone1</font>
+<font color ="#0000FF">*    ' ' 'LFA1-TELF2'            wa_vendor_data-fax_number.  "Telefone2</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">**  IF wa_vendor_data-operation NE zzifc_operation_itf_incluir.</font>
+<font color ="#0000FF">**    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">**     ' ' 'ADDR1_DATA-REMARK'    wa_vendor_data-remark . "Observações</font>
+<font color ="#0000FF">**  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*    'X' 'SAPMF02K'              '0120',</font>
+<font color ="#0000FF">*    ' ' 'BDC_OKCODE'            '=VW' .</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  IF wa_ifc_vdr001-create_customer IS NOT INITIAL.</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      ' ' 'LFA1-KUNNR'            wa_vendor_data-lifnr   . "Cliente</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*    ' ' 'LFA1-KONZS'            wa_vendor_data-konzs     , "GrpEmpresa</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STCD1'            wa_vendor_data-stcd1     , "Num ID Fiscal 1 (CNPJ)</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STCD2'            wa_vendor_data-stcd2     , "Num ID Fiscal 2 (CPF)</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STCD3'            wa_vendor_data-stcd3     , "Num ID Fiscal 3 (Inscrição Estadual)</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STCD4'            wa_vendor_data-stcd4     , "Num ID Fiscal 4 (Inscrição Municipal)</font>
+<font color ="#0000FF">*    ' ' 'LFA1-TXJCD'            wa_vendor_data-taxjurcode, "Domicilio Fiscal</font>
+<font color ="#0000FF">*    ' ' 'LFA1-STKZN'            wa_vendor_data-stkzn     , "Pessoa Fisica</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*    'X' 'SAPMF02K'              '0130',</font>
+<font color ="#0000FF">*    ' ' 'BDC_OKCODE'            '=VW' .</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  IF wa_vendor_data-bankl IS NOT INITIAL OR</font>
+<font color ="#0000FF">*     wa_vendor_data-bankn IS NOT INITIAL.</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      ' ' 'LFBK-BANKS(01)'        wa_vendor_data-banks     , "Pais do Banco</font>
+<font color ="#0000FF">*      ' ' 'LFBK-BANKL(01)'        wa_vendor_data-bankl     , "Chave do Banco</font>
+<font color ="#0000FF">*      ' ' 'LFBK-BANKN(01)'        wa_vendor_data-bankn     , "Conta Bancária</font>
+<font color ="#0000FF">*      ' ' 'LFBK-KOINH(01)'        wa_vendor_data-koinh     , "Titular da Conta</font>
+<font color ="#0000FF">*      ' ' 'LFBK-BKONT(01)'        wa_vendor_data-bkont     . "Controle de Bancos</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*    ' ' 'LFA1-XZEMP'            wa_vendor_data-xzemp     . "Dados Indiv.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">** Caso Banco não esteja cadastrado criar</font>
+<font color ="#0000FF">*  IF   wa_bnka  IS INITIAL                 AND</font>
+<font color ="#0000FF">*     ( wa_vendor_data-bankl IS NOT INITIAL OR</font>
+<font color ="#0000FF">*       wa_vendor_data-bankn IS NOT INITIAL ).</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*        'X' 'SAPLBANK'           '0100'                  ,</font>
+<font color ="#0000FF">*        ' ' 'BDC_OKCODE'         '=ENTR'                 .</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*         ' ' 'BNKA-BANKA'         wa_vendor_data-banka    . "Nome do Banco</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      'X' 'SAPMF02K'              '0210',</font>
+<font color ="#0000FF">*      ' ' 'BDC_OKCODE'            '=VW' ,</font>
+<font color ="#0000FF">*      ' ' 'LFB1-AKONT'            wa_ifc_vdr001-akont      , "Conta Conciliação</font>
+<font color ="#0000FF">*      ' ' 'LFB1-ZUAWA'            wa_ifc_vdr001-zuawa      , "Chave de Ordenação</font>
+<font color ="#0000FF">*      ' ' 'LFB1-FDGRV'            wa_ifc_vdr001-fdgrv      , "GrpAdmTesourar.</font>
+<font color ="#0000FF">*      ' ' 'LFB1-ALTKN'            wa_vendor_data-altkn     . "Numero antigo conta</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  IF wa_vendor_data-pernr IS NOT INITIAL.</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      ' ' 'LFB1-PERNR'          wa_vendor_data-pernr     . "Num Pessoal</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*    'X' 'SAPMF02K'              '0215',</font>
+<font color ="#0000FF">*    ' ' 'BDC_OKCODE'            '=UPDA' ,</font>
+<font color ="#0000FF">*    ' ' 'LFB1-ZTERM'            wa_vendor_data-zterm     , "Condições de Pagamento</font>
+<font color ="#0000FF">**   ' ' 'LFB1-REPRF'            wa_vendor_data-reprf     , "Verif. Fatura Dupli</font>
+<font color ="#0000FF">*    ' ' 'LFB1-REPRF'            wa_ifc_vdr001-reprf      , "Verif. Fatura Dupli</font>
+<font color ="#0000FF">*    ' ' 'LFB1-ZWELS'            wa_vendor_data-zwels     , "Formas Pgto</font>
+<font color ="#0000FF">*    ' ' 'LFB1-ZAHLS'            wa_vendor_data-zahls     , "Bloq. Pagamento</font>
+<font color ="#0000FF">*    ' ' 'LFB1-HBKID'            wa_vendor_data-hbkid     , "Banco Empresa</font>
+<font color ="#0000FF">*    ' ' 'LFB1-XPORE'            wa_vendor_data-xpore     , "Pgto. Individual</font>
+<font color ="#0000FF">*    ' ' 'LFB1-ZGRUP'            wa_vendor_data-zgrup     . "Chave Agrupamento</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*ENDFORM.                    " vendor_carrega_bdc</font>
+<font color ="#0000FF">*&---------------------------------------------------------------------*</font>
+<font color ="#0000FF">*&      Form  VENDOR_CARREGA_BDC2</font>
+<font color ="#0000FF">*&---------------------------------------------------------------------*</font>
+<font color ="#0000FF">*       text</font>
+<font color ="#0000FF">*----------------------------------------------------------------------*</font>
+<font color ="#0000FF">*  --&gt;  p1        text</font>
+<font color ="#0000FF">*  &lt;--  p2        text</font>
+<font color ="#0000FF">*----------------------------------------------------------------------*</font>
+FORM vendor_carrega_bdc2 .
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_incluir.
+
+    v_trans = 'FK01'.
+
+<font color ="#0000FF">*   Tela de Entrada da Criação do Fornecedor (FK01)</font>
+    PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02K'            '0105',
+      ' ' 'BDC_OKCODE'          '/00' ,
+      ' ' 'RF02K-LIFNR'         wa_vendor_data-lifnr   , "Cod. Fornecedor
+      ' ' 'RF02K-BUKRS'         wa_vendor_data-bukrs   , "Empresa
+      ' ' 'RF02K-KTOKK'         wa_ifc_vdr001-ktokk    , "Grupo de contas do Fornecedor
+      ' ' 'USE_ZAV'             'X'                    .
+
+  ELSEIF wa_vendor_data-operation EQ zzifc_operation_itf_alterar.
+
+    v_trans = 'FK02'.
+
+<font color ="#0000FF">*   Tela de Entrada de Alteração do Fornecedor (FK02)</font>
+    PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02K'            '0106'  ,
+      ' ' 'BDC_OKCODE'          '=MALL' ,
+      ' ' 'RF02K-LIFNR'         wa_vendor_data-lifnr   , "Cod. Fornecedor
+      ' ' 'RF02K-BUKRS'         wa_vendor_data-bukrs   , "Empresa
+      ' ' 'USE_ZAV'             'X'                    ,
+
+      'X' 'SAPMF02K'            '0106',
+      ' ' 'BDC_OKCODE'          '/00' .
+
+  ENDIF.
+
+<font color ="#0000FF">* Verifica se Fornecedor já existe cadastrado</font>
+  IF NOT wa_vendor_data-stcd1 IS INITIAL.
+    v_title = 'Empresa'.
+  ELSEIF NOT wa_vendor_data-stcd2 IS INITIAL.
+    v_title = 'Sr.'.
+  ENDIF.
+  CONDENSE v_title.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02K'              '0111',
+    ' ' 'BDC_OKCODE'            '=VW' ,
+    ' ' 'SZA1_D0100-TITLE_MEDI' v_title                  , "Forma de Tratamento
+    ' ' 'ADDR1_DATA-NAME1'      wa_vendor_data-name1     , "Nome Linha 1
+    ' ' 'ADDR1_DATA-NAME2'      wa_vendor_data-name2     , "Nome Linha 2
+    ' ' 'ADDR1_DATA-NAME4'      wa_vendor_data-name4     , "Nome Linha 4
+    ' ' 'ADDR1_DATA-SORT1'      wa_vendor_data-sort1     , "Termo de Pesquisa1
+    ' ' 'ADDR1_DATA-SORT2'      wa_vendor_data-sort2     , "Termo de Pesquisa2
+    ' ' 'ADDR1_DATA-STR_SUPPL1' v_street2                , "Endereço restante
+    ' ' 'ADDR1_DATA-STREET'     wa_vendor_data-street    , "Endereço
+    ' ' 'ADDR1_DATA-HOUSE_NUM1' wa_vendor_data-house_num , "Numero
+<font color ="#0000FF">*   ' ' 'LFA1-PFACH'                                       "Caixa Postal</font>
+    ' ' 'ADDR1_DATA-CITY1'      wa_vendor_data-city1     , "Local
+    ' ' 'ADDR1_DATA-POST_CODE1' wa_vendor_data-post_code , "Codigo Postal
+    ' ' 'ADDR1_DATA-CITY2'      wa_vendor_data-city2     , "Bairro
+    ' ' 'ADDR1_DATA-COUNTRY'    wa_vendor_data-country   , "Pais
+    ' ' 'ADDR1_DATA-REGION'     wa_vendor_data-region    , "Região
+    ' ' 'ADDR1_DATA-LANGU'      'PT'                     , "Idioma
+    ' ' 'SZA1_D0100-TEL_NUMBER' wa_vendor_data-tel_number,  "Telefone1
+    ' ' 'SZA1_D0100-FAX_NUMBER' wa_vendor_data-fax_number.  "Telefone2
+<font color ="#0000FF">*    ' ' 'ADDR1_DATA-EXTENSION2' wa_vendor_data-tlx_number. "Telebox</font>
+
+  PERFORM bdc_screen_field USING:
+    ' ' 'ADDR1_DATA-REMARK'      wa_vendor_data-remark   . "Observações
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02K'              '0120',
+    ' ' 'BDC_OKCODE'            '=VW' .
+
+  IF wa_ifc_vdr001-create_customer IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+      ' ' 'LFA1-KUNNR'            wa_vendor_data-lifnr   . "Cliente
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+    ' ' 'LFA1-KONZS'            wa_vendor_data-konzs     . "GrpEmpresa
+
+  IF wa_vendor_data-vendor_type NE 'EV'.
+    PERFORM bdc_screen_field USING:
+      ' ' 'LFA1-STCD1'            wa_vendor_data-stcd1     , "Num ID Fiscal 1 (CNPJ)
+      ' ' 'LFA1-STCD3'            wa_vendor_data-stcd3     , "Num ID Fiscal 3 (Inscrição Estadual)
+      ' ' 'LFA1-STCD4'            wa_vendor_data-stcd4     . "Num ID Fiscal 4 (Inscrição Municipal)
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+    ' ' 'LFA1-STCD2'            wa_vendor_data-stcd2     , "Num ID Fiscal 2 (CPF)
+<font color ="#0000FF">*   ' ' 'LFA1-TXJCD'            wa_vendor_data-taxjurcode, "Domicilio Fiscal</font>
+    ' ' 'LFA1-STKZN'            wa_vendor_data-stkzn     , "Pessoa Fisica
+
+    'X' 'SAPMF02K'              '0130',
+    ' ' 'BDC_OKCODE'            '=VW' .
+
+  IF wa_vendor_data-bankl IS NOT INITIAL OR
+     wa_vendor_data-bankn IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+      ' ' 'LFBK-BANKS(01)'        wa_vendor_data-banks     , "Pais do Banco
+      ' ' 'LFBK-BANKL(01)'        wa_vendor_data-bankl     , "Chave do Banco
+      ' ' 'LFBK-BANKN(01)'        wa_vendor_data-bankn     , "Conta Bancária
+      ' ' 'LFBK-KOINH(01)'        wa_vendor_data-koinh     , "Titular da Conta
+      ' ' 'LFBK-BKONT(01)'        wa_vendor_data-bkont     . "Controle de Bancos
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+      ' ' 'LFA1-XZEMP'            wa_ifc_vdr001-xzemp     . "Recebedor pgto dif cli. Dados Indiv.
+
+<font color ="#0000FF">*  Esse campo só seria utilizado para o cadastro da empresa WMSO</font>
+<font color ="#0000FF">*  IF wa_vendor_data-vendor_type NE 'EV' AND</font>
+<font color ="#0000FF">*     wa_vendor_data-vendor_type NE 'EE'.</font>
+<font color ="#0000FF">*    PERFORM bdc_screen_field USING:</font>
+<font color ="#0000FF">*      ' ' 'LFA1-XZEMP'            wa_vendor_data-xzemp     . "Dados Indiv.</font>
+<font color ="#0000FF">*  ENDIF.</font>
+
+<font color ="#0000FF">* Caso Banco não esteja cadastrado criar</font>
+  IF   wa_bnka  IS INITIAL                 AND
+     ( wa_vendor_data-bankl IS NOT INITIAL OR
+       wa_vendor_data-bankn IS NOT INITIAL ).
+    PERFORM bdc_screen_field USING:
+        'X' 'SAPLBANK'           '0100'                  ,
+        ' ' 'BDC_OKCODE'         '=ENTR'                 .
+
+    PERFORM bdc_screen_field USING:
+         ' ' 'BNKA-BANKA'         wa_vendor_data-banka    . "Nome do Banco
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02K'              '0210',
+      ' ' 'BDC_OKCODE'            '=VW' ,
+      ' ' 'LFB1-AKONT'            wa_ifc_vdr001-akont      , "Conta Conciliação
+      ' ' 'LFB1-ZUAWA'            wa_ifc_vdr001-zuawa      , "Chave de Ordenação
+      ' ' 'LFB1-FDGRV'            wa_ifc_vdr001-fdgrv      , "GrpAdmTesourar.
+      ' ' 'LFB1-ALTKN'            wa_vendor_data-altkn     . "Numero antigo conta
+
+  IF wa_vendor_data-pernr IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+      ' ' 'LFB1-PERNR'          wa_vendor_data-pernr     . "Num Pessoal
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02K'              '0215',
+    ' ' 'BDC_OKCODE'            '=UPDA' ,
+    ' ' 'LFB1-ZTERM'            wa_vendor_data-zterm     , "Condições de Pagamento
+    ' ' 'LFB1-REPRF'            wa_ifc_vdr001-reprf      , "Verif. Fatura Dupli
+    ' ' 'LFB1-ZWELS'            wa_vendor_data-zwels     , "Formas Pgto
+    ' ' 'LFB1-ZAHLS'            wa_vendor_data-zahls     , "Bloq. Pagamento
+    ' ' 'LFB1-HBKID'            wa_vendor_data-hbkid     , "Banco Empresa
+    ' ' 'LFB1-XPORE'            wa_vendor_data-xpore     , "Pgto. Individual
+    ' ' 'LFB1-ZGRUP'            wa_vendor_data-zgrup     . "Chave Agrupamento
+
+  IF wa_ifc_vdr001-create_customer IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+      ' ' 'LFB1-XVERR'               wa_vendor_data-xverr     . "Compens. c/ Cliente
+  ENDIF.
+
+
+ENDFORM.                    " VENDOR_CARREGA_BDC2
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  BDC_FIELD</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Insere campo na tabela it_bdc</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">*  --&gt; nome do campo</font>
+<font color ="#0000FF">*  --&gt; conteúdo do campo</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM bdc_screen_field USING par1
+                     par2
+                     par3.
+  CLEAR wa_bdc.
+
+  IF par1 = 'X'.
+    wa_bdc-program  = par2.
+    wa_bdc-dynpro   = par3.
+    wa_bdc-dynbegin = 'X'.
+  ELSE.
+    wa_bdc-fnam = par2.
+    wa_bdc-fval = par3.
+  ENDIF.
+
+  APPEND wa_bdc TO it_bdc.
+
+ENDFORM.                               " BDC_SCREEN_FIELD
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  CALL_TRANSACTION</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Faz a chamada da transação</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* --&gt;P_TRANS   ===&gt; Transação que deve ser executada</font>
+<font color ="#0000FF">* --&gt;P_MODE    ===&gt; Modo de processamento da transação</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM call_transaction  USING    p_trans
+                                p_mode.
+  DATA: v_control TYPE c.
+
+  CLEAR: wa_opt,
+         v_control.
+
+  FREE: it_msg.
+
+  wa_opt-racommit  = 'X'.
+  wa_opt-updmode   = 'S'.
+
+  IF p_mode IS INITIAL.
+    wa_opt-dismode   = 'N'.    " 'N' Background  'A' Foreground
+  ELSE.
+    wa_opt-dismode   = p_mode.
+  ENDIF.
+
+  CALL TRANSACTION p_trans USING it_bdc
+                    OPTIONS FROM wa_opt
+                   MESSAGES INTO it_msg.
+
+<font color ="#0000FF">* Busca mensagem de Sucesso</font>
+  LOOP AT it_msg
+     INTO wa_msg.
+
+    CHECK wa_msg-msgid EQ 'F2' AND
+        ( wa_msg-msgnr EQ '035' OR
+          wa_msg-msgnr EQ '056' OR
+          wa_msg-msgnr EQ '171' OR
+          wa_msg-msgnr EQ '271' ) .
+
+    CASE wa_vendor_data-operation.
+      WHEN 'I' OR 'A'.
+        MESSAGE ID  'ZZIFM'
+            TYPE    'S'
+            NUMBER  '029'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs.
+        RETURN.
+
+      WHEN 'B' OR 'U'.
+        MESSAGE ID  'ZZIFM'
+            TYPE    'S'
+            NUMBER  '032'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs.
+        v_control = 'X'.
+        EXIT.
+
+      WHEN 'E' OR 'R'.
+        MESSAGE ID  'ZZIFM'
+            TYPE    'S'
+            NUMBER  '033'
+            WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs.
+        RETURN.
+
+      WHEN OTHERS.
+
+    ENDCASE.
+
+  ENDLOOP.
+
+  IF v_control IS INITIAL.
+<font color ="#0000FF">*   Envia mensagem de erro</font>
+    MESSAGE ID      wa_msg-msgid
+            TYPE    'E'
+            NUMBER  wa_msg-msgnr
+            WITH    wa_msg-msgv1 wa_msg-msgv2 wa_msg-msgv3 wa_msg-msgv4
+            RAISING standard_error_batch.
+  ENDIF.
+
+ENDFORM.                    " CALL_TRANSACTION
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  VENDOR_BLOCK_UNBLOCK</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Bloqueio e Desbloqueio Fornecedor</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM vendor_block_unblock.
+
+  REFRESH: it_bdc, it_msg.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02K'       '0505',
+    ' ' 'BDC_OKCODE'     '/00' ,
+    ' ' 'RF02K-LIFNR'    wa_vendor_data-lifnr      , "Codigo Fornecedor
+    ' ' 'RF02K-BUKRS'    wa_vendor_data-bukrs      , "Empresa
+
+    'X' 'SAPMF02K'       '0510'                    ,
+    ' ' 'BDC_OKCODE'     '=UPDA'                   .
+
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_bloq. "Bloqueio
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'LFB1-SPERR'     'X'                       . "Empresa Selecionada
+
+  ELSEIF  wa_vendor_data-operation EQ  zzifc_operation_itf_desbloq. "Desbloqueio
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'LFB1-SPERR'     ' '                       . "Empresa Selecionada
+
+  ENDIF.
+
+ENDFORM.                    " BLOCK_UNBLOCK
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  VENDOR_DELETION</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Marca e Desmarca para Deleção o Fornecedor</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM vendor_deletion.
+
+  REFRESH: it_bdc, it_msg.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02K'       '0505',
+    ' ' 'BDC_OKCODE'     '/00' ,
+    ' ' 'RF02K-LIFNR'    wa_vendor_data-lifnr      , "Codigo Fornecedor
+    ' ' 'RF02K-BUKRS'    wa_vendor_data-bukrs      , "Empresa
+
+    'X' 'SAPMF02K'       '0520'                    ,
+    ' ' 'BDC_OKCODE'     '=UPDA'                   .
+
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_estornar. "Marcar para Deleção
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'LFA1-LOEVM'     'X'                       , "Todas as Áreas
+    ' ' 'LFB1-LOEVM'     'X'                       . "Empresa Selecionada
+
+  ELSEIF  wa_vendor_data-operation EQ  zzifc_operation_itf_reativar. "Desmarcar para Deleção
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'LFA1-LOEVM'     ' '                       , "Todas as Áreas
+    ' ' 'LFB1-LOEVM'     ' '                       . "Empresa Selecionada
+  ENDIF.
+
+ENDFORM.                    " DELETION_VENDOR
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  CUSTOMER_LOADS_BDC</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Batch Input Transações Cliente</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM customer_loads_bdc.
+
+<font color ="#0000FF">* Limpa tabela interna para criar o cliente</font>
+  REFRESH: it_bdc, it_msg.
+
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_incluir.
+
+    v_trans = 'FD01'.
+
+<font color ="#0000FF">*   Tela de Entrada da criação do cliente (FD01)</font>
+    PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02D'       '0105',
+      ' ' 'BDC_OKCODE'     '/00' ,
+      ' ' 'RF02D-KUNNR'    wa_vendor_data-lifnr             , "Cod. Cliente(Mesmo Fornecedor)
+      ' ' 'RF02D-BUKRS'    wa_vendor_data-bukrs             , "Empresa
+      ' ' 'RF02D-KTOKD'    wa_ifc_vdr001-ktokd_customer     , "Grupo de contas do Cliente
+      ' ' 'USE_ZAV'        'X'                              .
+
+  ELSEIF wa_vendor_data-operation EQ zzifc_operation_itf_alterar.
+
+    v_trans = 'FD02'.
+
+<font color ="#0000FF">*   Tela de Entrada da Alteração do cliente (FD02)</font>
+    PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02D'       '0106' ,
+      ' ' 'BDC_OKCODE'     '=MALL',
+      ' ' 'RF02D-KUNNR'    wa_vendor_data-lifnr             , "Cod. Cliente(Mesmo Fornecedor)
+      ' ' 'RF02D-BUKRS'    wa_vendor_data-bukrs             , "Empresa
+      ' ' 'USE_ZAV'        'X'                              ,
+
+      'X' 'SAPMF02D'       '0106',
+      ' ' 'BDC_OKCODE'     '/00' .
+
+  ENDIF.
+
+<font color ="#0000FF">* Verifica se Fornecedor já existe cadastrado</font>
+  IF NOT wa_vendor_data-stcd1 IS INITIAL.
+    v_title = 'Empresa'.
+  ELSEIF NOT wa_vendor_data-stcd2 IS INITIAL.
+    v_title = 'Sr.'.
+  ENDIF.
+  CONDENSE v_title.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02D'              '0111',
+    ' ' 'BDC_OKCODE'            '=VW' ,
+    ' ' 'SZA1_D0100-TITLE_MEDI' v_title                     , "Forma de Tratamento
+    ' ' 'ADDR1_DATA-NAME1'      wa_vendor_data-name1        , "Nome Linha 1
+    ' ' 'ADDR1_DATA-NAME2'      wa_vendor_data-name2        , "Nome Linha 2
+    ' ' 'ADDR1_DATA-NAME4'      wa_vendor_data-name4        , "Nome Linha 4
+    ' ' 'ADDR1_DATA-SORT1'      wa_vendor_data-sort1        , "Termo de Pesquisa1
+    ' ' 'ADDR1_DATA-STREET'     wa_vendor_data-street       , "Endereço
+    ' ' 'ADDR1_DATA-HOUSE_NUM1' wa_vendor_data-house_num    , "Numero
+    ' ' 'ADDR1_DATA-STR_SUPPL1' v_street2                   , "Endereço 2
+<font color ="#0000FF">*   ' ' 'KNA1-PFACH'                                          "Caixa Postal</font>
+    ' ' 'ADDR1_DATA-CITY2'      wa_vendor_data-city2        , "Local
+    ' ' 'ADDR1_DATA-POST_CODE1' wa_vendor_data-post_code    , "Codigo Postal
+    ' ' 'ADDR1_DATA-CITY1'      wa_vendor_data-city1        , "Bairro
+    ' ' 'ADDR1_DATA-COUNTRY'    wa_vendor_data-country      , "Pais
+    ' ' 'ADDR1_DATA-REGION'     wa_vendor_data-region       , "Região
+    ' ' 'ADDR1_DATA-TAXJURCODE' wa_vendor_data-taxjurcode   , "Domicilio Fiscal
+    ' ' 'ADDR1_DATA-LANGU'      'PT'                        , "Idioma
+    ' ' 'SZA1_D0100-TEL_NUMBER' wa_vendor_data-tel_number   , "Telefone1
+    ' ' 'SZA1_D0100-FAX_NUMBER' wa_vendor_data-fax_number   , "Telefone2
+    ' ' 'ADDR1_DATA-REMARK'     wa_vendor_data-remark       , "Observações
+
+    'X' 'SAPMF02D'              '0120',
+    ' ' 'BDC_OKCODE'            '=VW' ,
+    ' ' 'KNA1-LIFNR'            wa_vendor_data-lifnr        , "Fornecedor
+    ' ' 'KNA1-KONZS'            wa_vendor_data-konzs        , "GrpEmpresa
+    ' ' 'KNA1-STCD1'            wa_vendor_data-stcd1        , "Num ID Fiscal 1 (CNPJ)
+    ' ' 'KNA1-STCD2'            wa_vendor_data-stcd2        , "Num ID Fiscal 2 (CPF)]
+    ' ' 'KNA1-STCD3'            wa_vendor_data-stcd3        , "Num ID Fiscal 3 (Inscrição Estadual)
+    ' ' 'KNA1-STCD4'            wa_vendor_data-stcd4        , "Num ID Fiscal 4 (Inscrição Municipal)
+<font color ="#0000FF">*   ' ' 'KNA1-TXJCD'            wa_vendor_data-taxjurcode   , "Domicilio Fiscal</font>
+    ' ' 'KNA1-STKZN'            wa_vendor_data-stkzn        , "Cria Cliente
+
+    'X' 'SAPMF02D'              '0130',
+    ' ' 'BDC_OKCODE'            '=VW' .
+
+  IF wa_vendor_data-bankl IS NOT INITIAL OR
+     wa_vendor_data-bankn IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+        ' ' 'KNBK-BANKS(01)'        wa_vendor_data-banks        , "Pais
+        ' ' 'KNBK-BANKL(01)'        wa_vendor_data-bankl        , "Chave do Banco
+        ' ' 'KNBK-BANKN(01)'        wa_vendor_data-bankn        , "Conta Bancária
+        ' ' 'KNBK-KOINH(01)'        wa_vendor_data-koinh        , "Titular da Conta
+        ' ' 'KNBK-BKONT(01)'        wa_vendor_data-bkont        . "Controle de Bancos
+  ENDIF.
+
+  PERFORM bdc_screen_field USING:
+      'X' 'SAPMF02D'              '0360',
+      ' ' 'BDC_OKCODE'            '=VW' ,
+<font color ="#0000FF">*    ' ' 'KNVK-ANRED(01)'                                   , "Forma de tratamento da pessoa de contato</font>
+<font color ="#0000FF">*    ' ' 'KNVK-NAMEV(01)'                                   , "Nome</font>
+<font color ="#0000FF">*    ' ' 'KNVK-NAME1(01)'                                   , "Primeiro Nome</font>
+<font color ="#0000FF">*    ' ' 'KNVK-TELF1(01)'                                   , "Telefone 1</font>
+<font color ="#0000FF">*    ' ' 'KNVK-ABTNR(01)'                                   , "Departamento</font>
+
+      'X' 'SAPMF02D'              '0210',
+      ' ' 'BDC_OKCODE'            '=VW' ,
+      ' ' 'KNB1-AKONT'            wa_ifc_vdr001-akont_customer, "Conta Conciliação
+      ' ' 'KNB1-ZUAWA'            wa_ifc_vdr001-zuawa_customer, "Chave de Ordenação
+      ' ' 'KNB1-FDGRV'            wa_ifc_vdr001-fdgrv_customer, "GrpAdmTesourar.
+      ' ' 'KNB1-ALTKN'            wa_vendor_data-altkn        , "Numero antigo conta
+
+      'X' 'SAPMF02D'              '0215',
+      ' ' 'BDC_OKCODE'            '=UPDA' ,
+      ' ' 'KNB1-ZTERM'            wa_vendor_data-zterm        , "Condição de Pgto
+<font color ="#0000FF">*     ' ' 'KNB1-XZVER'            wa_vendor_data-xzver        , "Registrar histórico de pagamentos?</font>
+<font color ="#0000FF">*     ' ' 'KNB1-REPRF'            wa_vendor_data-reprf        , "Verif. Fatura Dupli</font>
+      ' ' 'KNB1-ZWELS'            wa_vendor_data-zwels        , "Formas Pgto
+      ' ' 'KNB1-HBKID'            wa_vendor_data-hbkid        , "Banco Empresa
+      ' ' 'KNB1-XPORE'            wa_vendor_data-xpore        , "Pagamento Individual
+<font color ="#0000FF">*     ' ' 'KNB1-XVERR'            wa_vendor_data-xverr        . "Compensação com Fornecedor</font>
+      ' ' 'KNB1-ZAHLS'            wa_vendor_data-zahls        . "Bloq. Pagamento
+
+  IF wa_ifc_vdr001-create_customer IS NOT INITIAL.
+    PERFORM bdc_screen_field USING:
+       ' ' 'KNB1-XVERR'            wa_vendor_data-xverr        . "Compensação com Fornecedor
+  ENDIF.
+
+ENDFORM.                    " LOADS_BDC_CUSTOMER
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  CUSTOMER_BLOCK_UNBLOCK</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Bloqueio e Desbloqueio Cliente</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM customer_block_unblock.
+
+  REFRESH: it_bdc, it_msg.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02D'       '0505',
+    ' ' 'BDC_OKCODE'     '/00' ,
+    ' ' 'RF02D-KUNNR'    wa_vendor_data-lifnr      , "Codigo Cliente(Mesmo Fornecedor)
+    ' ' 'RF02D-BUKRS'    wa_vendor_data-bukrs      , "Empresa
+
+    'X' 'SAPMF02D'       '0510'                    ,
+    ' ' 'BDC_OKCODE'     '=UPDA'                   .
+
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_bloq. "Bloqueio
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'KNB1-SPERR'     'X'                       . "Empresa Selecionada
+
+  ELSEIF  wa_vendor_data-operation EQ  zzifc_operation_itf_desbloq. "Desbloqueio
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'KNB1-SPERR'     ' '                       . "Empresa Selecionada
+
+  ENDIF.
+
+ENDFORM.                    " BLOCK_UNBLOCK
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  CUSTOMER_DELETION</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Marca e Desmarca para Deleção o Fornecedor</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM customer_deletion .
+
+  REFRESH: it_bdc, it_msg.
+
+  PERFORM bdc_screen_field USING:
+    'X' 'SAPMF02D'       '0505',
+    ' ' 'BDC_OKCODE'     '/00' ,
+    ' ' 'RF02D-KUNNR'    wa_vendor_data-lifnr      , "Codigo Fornecedor
+    ' ' 'RF02D-BUKRS'    wa_vendor_data-bukrs      , "Empresa
+
+    'X' 'SAPMF02D'       '0520'                    ,
+    ' ' 'BDC_OKCODE'     '=UPDA'                   .
+
+  IF wa_vendor_data-operation EQ zzifc_operation_itf_estornar. "Marcar para Deleção
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'KNA1-LOEVM'     'X'                       , "Todas as Áreas
+    ' ' 'KNB1-LOEVM'     'X'                       . "Empresa Selecionada
+
+  ELSEIF  wa_vendor_data-operation EQ  zzifc_operation_itf_reativar. "Desmarcar para Deleção
+
+    PERFORM bdc_screen_field USING:
+    ' ' 'KNA1-LOEVM'     ' '                       , "Todas as Áreas
+    ' ' 'KNB1-LOEVM'     ' '                       . "Empresa Selecionada
+  ENDIF.
+
+ENDFORM.                    " CUSTOMER_DELETION
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  POST_CODE_PROCESS</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Tratamento campo CEP</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM post_code_process .
+
+  CONCATENATE wa_vendor_data-post_code(5) '-'
+              wa_vendor_data-post_code+5(3) INTO
+              wa_vendor_data-post_code.
+
+ENDFORM.                    " POST_CODE_PROCESS
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  SELECT_CUSTOMER</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Verifica se existe cliente cadastrado</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM select_customer .
+
+<font color ="#0000FF">* Identifica o Cliente utilizando o Código da Empresa, Número Antigo e CNPJ/CPF</font>
+  SELECT SINGLE kunnr bukrs
+   FROM knb1
+   INTO wa_knb1
+   WHERE kunnr EQ wa_vendor_data-lifnr
+     AND bukrs EQ wa_vendor_data-bukrs.
+  IF  sy-subrc NE 0.
+    MESSAGE ID  'ZZIFM'
+        TYPE    'E'
+        NUMBER  '024'
+        WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+        RAISING customer_error.
+  ENDIF.
+
+ENDFORM.                    " SELECT_CUSTOMER
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  SELECT_VENDOR</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Verifica se existe Fornecedor Cadastrado</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM select_vendor .
+
+  SELECT SINGLE lifnr bukrs
+     FROM lfb1
+     INTO wa_lfb1
+     WHERE lifnr EQ wa_vendor_data-lifnr
+       AND bukrs EQ wa_vendor_data-bukrs.
+
+  IF sy-subrc NE 0.
+    MESSAGE ID  'ZZIFM'
+        TYPE    'E'
+        NUMBER  '015'
+        WITH    wa_vendor_data-lifnr  wa_vendor_data-bukrs
+        RAISING vendor_not_found.
+  ENDIF.
+
+ENDFORM.                    " SELECT_VENDOR
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">** Form  STREET_METHOD</font>
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">** Faz a quebra do Endereço caso tamanho seja maior que 35</font>
+<font color ="#0000FF">**---------------------------------------------------------------------------</font>
+<font color ="#0000FF">*FORM street_method .</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  DATA: it_split        TYPE TABLE OF string.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  DATA: wa_split        TYPE string.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  DATA: v_tamanho       TYPE i,</font>
+<font color ="#0000FF">*        v_tamanho_descr TYPE i,</font>
+<font color ="#0000FF">*        v_space         TYPE i VALUE 35.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  v_tamanho_descr = STRLEN( wa_vendor_data-street ).</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*  IF v_tamanho_descr GT 35.</font>
+<font color ="#0000FF">*    SPLIT wa_vendor_data-street AT space INTO TABLE it_split.</font>
+<font color ="#0000FF">*    CLEAR: wa_vendor_data-street.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*    LOOP AT it_split INTO wa_split.</font>
+<font color ="#0000FF">*      v_tamanho = STRLEN( wa_split ).</font>
+<font color ="#0000FF">*      v_space = v_space - v_tamanho.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*      IF v_space GE 0.</font>
+<font color ="#0000FF">*        CONCATENATE wa_vendor_data-street wa_split</font>
+<font color ="#0000FF">*               INTO wa_vendor_data-street</font>
+<font color ="#0000FF">*               SEPARATED BY space.</font>
+<font color ="#0000FF">*      ELSE.</font>
+<font color ="#0000FF">*        CONCATENATE v_street2 wa_split</font>
+<font color ="#0000FF">*               INTO v_street2</font>
+<font color ="#0000FF">*               SEPARATED BY space.</font>
+<font color ="#0000FF">*      ENDIF.</font>
+<font color ="#0000FF">*    ENDLOOP.</font>
+<font color ="#0000FF">*    CONDENSE: wa_vendor_data-street, v_street2.</font>
+<font color ="#0000FF">*  ENDIF.</font>
+<font color ="#0000FF">*</font>
+<font color ="#0000FF">*ENDFORM.                    " STREET_METHOD</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  OBSERVATION_UPDATE</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Faz Atualização do campo Observações quando houver bloqueio ou desbloqueio</font>
+<font color ="#0000FF">* do fornecedor</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM observ_update_vendor.
+
+  FREE: it_bdc.
+
+  PERFORM bdc_screen_field USING:
+     'X' 'SAPMF02K'       '0106',
+     ' ' 'BDC_OKCODE'     '/00' ,
+     ' ' 'RF02K-LIFNR'    wa_vendor_data-lifnr      , "Codigo Fornecedor
+     ' ' 'RF02K-BUKRS'    wa_vendor_data-bukrs      , "Empresa
+     ' ' 'RF02K-D0110'    'X'                       , "Marca Campo Endereço
+     ' ' 'USE_ZAV'        'X'                       . "Utilizar admin.centraliz.ende
+
+  PERFORM bdc_screen_field USING:
+     'X' 'SAPMF02K'            '0111' ,
+     ' ' 'BDC_OKCODE'          '=UPDA',
+     ' ' 'ADDR1_DATA-REMARK'   wa_vendor_data-remark. "Observaçoes
+
+ENDFORM.                     "observation_update
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Form  ADJUSTMENT_FIELD</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+<font color ="#0000FF">* Ajusta campos</font>
+<font color ="#0000FF">*---------------------------------------------------------------------------</font>
+FORM adjustment_field.
+
+<font color ="#0000FF">* Trata campo compensação com o cliente</font>
+  IF wa_vendor_data-flag_integration EQ 'Y'.
+    wa_vendor_data-xverr = 'X'.
+  ELSE.
+    CLEAR: wa_vendor_data-xverr.
+  ENDIF.
+
+ENDFORM.                    " ADJUSTMENT_FIELD
+</pre>
+<hr>
+<font size="2" face = "Sans Serif">Extracted by Direct Download 46cd version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 701
+</font>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<html>
+<head>
+<title>LZZIFG_INTERFACES_VENDORTOP</title>
+</head>
+<body bgcolor="#FFFFE0">
+<font size="3" face = "Arial" color="#000000"><b>Description: LZZIFG_INTERFACES_VENDORTOP</b></font>
+<br>
+<font size="3" face = "Arial" color="#000000"><b> Interface de Fornecedor com Integrator</b></font>
+<hr>
+<pre width="150">
+FUNCTION-POOL zzifg_interfaces_vendor
+  MESSAGE-ID zzifm.
+
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+<font color ="#0000FF">* Pools</font>
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+TYPE-POOLS zzifc.
+
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+<font color ="#0000FF">* Types</font>
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+TYPES: BEGIN OF tp_lfa1      ,
+        lifnr TYPE lfa1-lifnr,
+        stcd1 TYPE lfa1-stcd1,
+        stcd2 TYPE lfa1-stcd2,
+       END OF tp_lfa1        .
+
+TYPES: BEGIN OF tp_lfb1      ,
+        lifnr TYPE lfb1-lifnr,
+        bukrs TYPE lfb1-bukrs,
+       END OF tp_lfb1        .
+
+TYPES: BEGIN OF tp_knb1      ,
+        kunnr TYPE knb1-kunnr,
+        bukrs TYPE knb1-bukrs,
+       END OF tp_knb1.
+
+
+TYPES: BEGIN OF tp_bnka,
+        banks   TYPE bnka-banks,
+        bankl   TYPE bnka-bankl,
+       END OF tp_bnka.
+
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+<font color ="#0000FF">* Internal Table</font>
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+DATA: it_lfa1          TYPE TABLE OF tp_lfa1     ,
+      it_lfb1          TYPE TABLE OF tp_lfb1     ,
+      it_knb1          TYPE TABLE OF tp_knb1     ,
+      it_bdc           TYPE TABLE OF bdcdata     ,
+      it_msg           TYPE TABLE OF bdcmsgcoll  ,
+      it_vendor_data   TYPE TABLE OF zzifs_fst_vendor_data.
+
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+<font color ="#0000FF">* Work Area</font>
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+DATA: wa_generaldetail TYPE bapivendor_04,
+      wa_companydetail TYPE bapivendor_05,
+      it_bankdetail    TYPE TABLE OF bapivendor_06.
+
+DATA: wa_vendor_data   TYPE zzifs_fst_vendor_data,
+      wa_ifc_vdr001    TYPE zzift_ifc_vdr001     ,
+      wa_ifc_vdr002    TYPE zzift_ifc_vdr002     ,
+      wa_ifc_vdr003    TYPE zzift_ifc_vdr003     ,
+      wa_lfb1          TYPE tp_lfb1              ,
+      wa_knb1          TYPE tp_knb1              ,
+      wa_bdc           TYPE bdcdata              ,
+      wa_msg           TYPE bdcmsgcoll           ,
+      wa_opt           TYPE ctu_params           ,
+      wa_bnka          TYPE tp_bnka              .
+
+
+
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+<font color ="#0000FF">* Variaveis</font>
+<font color ="#0000FF">* ----------------------------------------------------------------------</font>
+DATA: v_legacy_id           TYPE zzife_legacy_id,
+      v_lifnr               TYPE lfa1-lifnr     ,
+      v_kunnr               TYPE kna1-kunnr     ,
+      v_title               TYPE ad_titletx     ,
+      v_trans(4)            TYPE c              ,
+      v_achou_fornecedor(1) TYPE c              ,
+      v_achou_cliente(1)    TYPE c              ,
+      v_cria_cliente(1)     TYPE c              ,
+      v_street2(35)         TYPE c              .
+</pre>
+<hr>
+<font size="2" face = "Sans Serif">Extracted by Direct Download 46cd version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 701
+</font>
+</body>
+</html>
